@@ -37,9 +37,10 @@ jobs:
           VIDEO_URL: ${{ inputs.video_url }}
           COVER_URL: ${{ inputs.cover_url }}
         run: |
-          curl -sL --retry 3 "$VIDEO_URL" -o input.mp4
-          curl -sL --retry 3 "$COVER_URL" -o cover.img
+          curl -fsSL --retry 3 "$VIDEO_URL" -o input.mp4
+          curl -fsSL --retry 3 "$COVER_URL" -o cover.img
           ls -la input.mp4 cover.img
+          file input.mp4 cover.img
 
       - name: Merge cover + video
         env:
