@@ -1,0 +1,70 @@
+name: Merge Cover
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: 'source video mp4 url'
+        required: true
+      cover_url:
+        description: 'cover image url'
+        required: true
+      duration:
+        description: 'cover seconds'
+        required: false
+        default: '0.8'
+      out_name:
+        description: 'output file name'
+        required: false
+        default: 'merged.mp4'
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download inputs
+        env:
+          VIDEO_URL: ${{ inputs.video_url }}
+          COVER_URL: ${{ inputs.cover_url }}
+        run: |
+          curl -sL --retry 3 "$VIDEO_URL" -o input.mp4
+          curl -sL --retry 3 "$COVER_URL" -o cover.img
+          ls -la input.mp4 cover.img
+
+      - name: Merge cover + video
+        env:
+          DUR: ${{ inputs.duration }}
+          OUT: ${{ inputs.out_name }}
+        run: |
+          AUDIO=$(ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 input.mp4)
+          SCALE="scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=white,setsar=1,format=yuv420p"
+          if [ -n "$AUDIO" ]; then
+            ffmpeg -y -loop 1 -t "$DUR" -i cover.img -i input.mp4 \
+              -f lavfi -t "$DUR" -i anullsrc=channel_layout=stereo:sample_rate=44100 \
+              -filter_complex "[0:v]$SCALE[v1];[2:a]atrim=duration=$DUR,asetpts=PTS-STARTPTS[a1];[1:v]$SCALE[v2];[v1][a1][v2][1:a]concat=n=2:v=1:a=1[outv][outa]" \
+              -map "[outv]" -map "[outa]" -c:v libx264 -preset veryfast -crf 20 \
+              -c:a aac -b:a 128k -movflags +faststart "$OUT"
+          else
+            ffmpeg -y -loop 1 -t "$DUR" -i cover.img -i input.mp4 \
+              -filter_complex "[0:v]$SCALE[v1];[1:v]$SCALE[v2];[v1][v2]concat=n=2:v=1:a=0[outv]" \
+              -map "[outv]" -an -c:v libx264 -preset veryfast -crf 20 \
+              -movflags +faststart "$OUT"
+          fi
+          ls -la "$OUT"
+
+      - name: Publish result
+        env:
+          OUT: ${{ inputs.out_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p outputs
+          mv "$OUT" "outputs/$OUT"
+          git config user.name "merge-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add outputs
+          git commit -m "add outputs/$OUT" || echo "nothing to commit"
+          git push
