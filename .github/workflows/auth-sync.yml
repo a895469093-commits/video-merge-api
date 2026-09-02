@@ -95,6 +95,7 @@ jobs:
           PYEOF
 
       - name: Write status file
+        continue-on-error: true
         env:
           AIDELLY_KEY: ${{ secrets.AIDELLY_KEY }}
         run: |
